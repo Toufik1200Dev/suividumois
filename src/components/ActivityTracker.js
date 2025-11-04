@@ -492,6 +492,10 @@ const ActivityTracker = ({ onLogout, user }) => {
       const result = await saveMonthlyData(user.uid, year, month, confirmedData);
       
       if (result.success) {
+        // Clear confirmed data display immediately
+        setConfirmedData(null);
+        setShowConfirmedData(false);
+        
         setWeekData(confirmedData);
         setShowThankYou(true);
         
@@ -513,8 +517,6 @@ const ActivityTracker = ({ onLogout, user }) => {
         setTeleworkData({ monday: '0', tuesday: '0', wednesday: '0', thursday: '0', friday: '0', saturday: '0', sunday: '0' });
         setRestaurantTicketData({ monday: '0', tuesday: '0', wednesday: '0', thursday: '0', friday: '0', saturday: '0', sunday: '0' });
         setIsEditing(false);
-        setConfirmedData(null);
-        setShowConfirmedData(false);
         
         // Reload week data to show updated table
         await loadWeekData();
