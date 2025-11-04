@@ -42,6 +42,8 @@ const ActivityTracker = ({ onLogout, user }) => {
   });
 
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmedData, setConfirmedData] = useState(null);
+  const [showConfirmedData, setShowConfirmedData] = useState(false);
 
   useEffect(() => {
     loadWeekData();
@@ -97,11 +99,31 @@ const ActivityTracker = ({ onLogout, user }) => {
         });
         
         Object.keys(result.data).forEach(dateString => {
-          const date = new Date(dateString + 'T00:00:00');
-          if (date >= monday && date <= sunday) {
-            weekDataFiltered[dateString] = result.data[dateString];
+          // Normalize date string format (ensure it's YYYY-MM-DD)
+          const normalizedDateString = dateString.length === 10 ? dateString : dateString.split('T')[0];
+          const date = new Date(normalizedDateString + 'T00:00:00');
+          
+          // Compare dates properly (set time to midnight for comparison)
+          const mondayMidnight = new Date(monday);
+          mondayMidnight.setHours(0, 0, 0, 0);
+          const sundayMidnight = new Date(sunday);
+          sundayMidnight.setHours(23, 59, 59, 999);
+          const dateMidnight = new Date(date);
+          dateMidnight.setHours(0, 0, 0, 0);
+          
+          if (dateMidnight >= mondayMidnight && dateMidnight <= sundayMidnight) {
+            // Use the normalized date string from weekDaysArray if it exists, otherwise use the original
+            const matchingDay = weekDaysArray.find(day => {
+              const dayDateMidnight = new Date(day.date);
+              dayDateMidnight.setHours(0, 0, 0, 0);
+              return dayDateMidnight.getTime() === dateMidnight.getTime();
+            });
+            
+            const dateStringToUse = matchingDay ? matchingDay.dateString : normalizedDateString;
+            weekDataFiltered[dateStringToUse] = result.data[dateString];
+            
             // Load telework and restaurant ticket data
-            const dayIndex = weekDaysArray.findIndex(day => day.dateString === dateString);
+            const dayIndex = weekDaysArray.findIndex(day => day.dateString === dateStringToUse);
             if (dayIndex >= 0 && dayIndex < dayKeys.length) {
               const dayKey = dayKeys[dayIndex];
               if (result.data[dateString].absence) {
@@ -279,10 +301,19 @@ const ActivityTracker = ({ onLogout, user }) => {
     const updated = [...weekRows];
     if (field === 'timeType') {
       updated[index][field] = value;
-      // If changed to absent, set default client to 'interne'
+      // If changed to absent, disable client selection
       if (value === 'absent') {
-        updated[index].client = 'interne';
-        updated[index].activity = '';
+        updated[index].client = '';
+        // Reset all day values when switching to absent
+        updated[index].days = {
+          monday: '',
+          tuesday: '',
+          wednesday: '',
+          thursday: '',
+          friday: '',
+          saturday: '',
+          sunday: ''
+        };
       }
     } else {
       updated[index][field] = value;
@@ -291,12 +322,28 @@ const ActivityTracker = ({ onLogout, user }) => {
   };
 
   const updateDayValue = (rowIndex, dayKey, value) => {
-    // Validate value is between 0.1 and 1
+    const row = weekRows[rowIndex];
     const numValue = parseFloat(value);
-    if (value === '' || (numValue >= 0.1 && numValue <= 1)) {
-      const updated = [...weekRows];
-      updated[rowIndex].days[dayKey] = value;
-      setWeekRows(updated);
+    
+    // Disable Saturday and Sunday for both present and absent
+    if (dayKey === 'saturday' || dayKey === 'sunday') {
+      return;
+    }
+    
+    // For absent rows, only allow 0 or 1
+    if (row.timeType === 'absent') {
+      if (value === '' || value === '0' || value === '1') {
+        const updated = [...weekRows];
+        updated[rowIndex].days[dayKey] = value;
+        setWeekRows(updated);
+      }
+    } else {
+      // For present rows, validate value is between 0.1 and 1
+      if (value === '' || (numValue >= 0.1 && numValue <= 1)) {
+        const updated = [...weekRows];
+        updated[rowIndex].days[dayKey] = value;
+        setWeekRows(updated);
+      }
     }
   };
 
@@ -329,11 +376,11 @@ const ActivityTracker = ({ onLogout, user }) => {
     return errors;
   };
 
-  const handleSubmit = async () => {
-    // Validate all rows have client and activity
-    const invalidRows = weekRows.filter(row => !row.client || !row.activity);
+  const handleConfirm = () => {
+    // Validate all rows have activity
+    const invalidRows = weekRows.filter(row => !row.activity);
     if (invalidRows.length > 0) {
-      alert('Veuillez remplir tous les champs Client et Activité');
+      alert('Veuillez remplir tous les champs Activité');
       return;
     }
 
@@ -344,10 +391,91 @@ const ActivityTracker = ({ onLogout, user }) => {
       return;
     }
 
-    // Validate day totals
+    // For absent rows, validate client is not required but should be empty
+    const absentRows = weekRows.filter(row => row.timeType === 'absent' && row.client);
+    if (absentRows.length > 0) {
+      alert('Les lignes avec Type de temps "Absent" ne doivent pas avoir de Client sélectionné');
+      return;
+    }
+
+    // For present rows, validate client is required
+    const presentRowsWithoutClient = weekRows.filter(row => row.timeType === 'present' && !row.client);
+    if (presentRowsWithoutClient.length > 0) {
+      alert('Veuillez remplir tous les champs Client pour les lignes avec Type de temps "Présent"');
+      return;
+    }
+
+    // Validate day totals for present rows
     const dayErrors = validateDayTotals();
     if (dayErrors.length > 0) {
       alert('Erreurs de validation:\n' + dayErrors.join('\n') + '\n\nLa somme de chaque jour doit être égale à 1.');
+      return;
+    }
+
+    // Prepare confirmed data
+    const updatedWeekData = { ...weekData };
+    const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    
+    // Initialize all days of the week with telework and restaurant ticket data
+    dayKeys.forEach((dayKey, dayIndex) => {
+      const dateString = weekDays[dayIndex].dateString;
+      updatedWeekData[dateString] = {
+        activities: [],
+        absence: {
+          type: 'Présent',
+          telework: teleworkData[dayKey] || '0',
+          restaurantTicket: restaurantTicketData[dayKey] || '0'
+        }
+      };
+    });
+    
+    // Process each row - collect all activities for each day
+    const activitiesByDay = {};
+    dayKeys.forEach((dayKey, dayIndex) => {
+      activitiesByDay[weekDays[dayIndex].dateString] = [];
+    });
+    
+    weekRows.forEach(row => {
+      dayKeys.forEach((dayKey, dayIndex) => {
+        const dayValue = parseFloat(row.days[dayKey]) || 0;
+        
+        if (dayValue > 0) {
+          const dateString = weekDays[dayIndex].dateString;
+          
+          // Determine absence type - if any row for this day is absent, mark as absent
+          if (row.timeType === 'absent') {
+            updatedWeekData[dateString].absence.type = 'Absent';
+          }
+
+          // Collect activity entry with the day value
+          activitiesByDay[dateString].push({
+            client: row.client || 'N/A',
+            activity: row.activity,
+            value: dayValue
+          });
+        }
+      });
+    });
+    
+    // Set all activities for each day
+    dayKeys.forEach((dayKey, dayIndex) => {
+      const dateString = weekDays[dayIndex].dateString;
+      updatedWeekData[dateString].activities = activitiesByDay[dateString];
+      
+      // If no activities and no absence type set, keep as Présent
+      if (updatedWeekData[dateString].activities.length === 0) {
+        updatedWeekData[dateString].absence.type = 'Présent';
+      }
+    });
+
+    // Store confirmed data and show it
+    setConfirmedData(updatedWeekData);
+    setShowConfirmedData(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!confirmedData) {
+      alert('Veuillez d\'abord confirmer les données');
       return;
     }
 
@@ -358,70 +486,13 @@ const ActivityTracker = ({ onLogout, user }) => {
         return;
       }
 
-      const updatedWeekData = { ...weekData };
-      const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      
-      // Initialize all days of the week with telework and restaurant ticket data
-      // IMPORTANT: Replace activities instead of appending to avoid accumulation
-      dayKeys.forEach((dayKey, dayIndex) => {
-        const dateString = weekDays[dayIndex].dateString;
-        // Reset activities array for each day - new submission replaces old data
-        updatedWeekData[dateString] = {
-          activities: [],
-          absence: {
-            type: 'Présent',
-            telework: teleworkData[dayKey] || '0',
-            restaurantTicket: restaurantTicketData[dayKey] || '0'
-          }
-        };
-      });
-      
-      // Process each row - collect all activities for each day
-      const activitiesByDay = {};
-      dayKeys.forEach((dayKey, dayIndex) => {
-        activitiesByDay[weekDays[dayIndex].dateString] = [];
-      });
-      
-      weekRows.forEach(row => {
-        dayKeys.forEach((dayKey, dayIndex) => {
-          const dayValue = parseFloat(row.days[dayKey]) || 0;
-          
-          if (dayValue > 0) {
-            const dateString = weekDays[dayIndex].dateString;
-            
-            // Determine absence type - if any row for this day is absent, mark as absent
-            if (row.timeType === 'absent') {
-              updatedWeekData[dateString].absence.type = 'Absent';
-            }
-
-            // Collect activity entry with the day value
-            activitiesByDay[dateString].push({
-              client: row.client,
-              activity: row.activity,
-              value: dayValue
-            });
-          }
-        });
-      });
-      
-      // Set all activities for each day (replacing previous data)
-      dayKeys.forEach((dayKey, dayIndex) => {
-        const dateString = weekDays[dayIndex].dateString;
-        updatedWeekData[dateString].activities = activitiesByDay[dateString];
-        
-        // If no activities and no absence type set, keep as Présent
-        if (updatedWeekData[dateString].activities.length === 0) {
-          updatedWeekData[dateString].absence.type = 'Présent';
-        }
-      });
-
       // Save to Firestore - save for the month containing the week
       const year = monday.getFullYear();
       const month = monday.getMonth();
-      const result = await saveMonthlyData(user.uid, year, month, updatedWeekData);
+      const result = await saveMonthlyData(user.uid, year, month, confirmedData);
       
       if (result.success) {
-        setWeekData(updatedWeekData);
+        setWeekData(confirmedData);
         setShowThankYou(true);
         
         // Reset form
@@ -442,6 +513,8 @@ const ActivityTracker = ({ onLogout, user }) => {
         setTeleworkData({ monday: '0', tuesday: '0', wednesday: '0', thursday: '0', friday: '0', saturday: '0', sunday: '0' });
         setRestaurantTicketData({ monday: '0', tuesday: '0', wednesday: '0', thursday: '0', friday: '0', saturday: '0', sunday: '0' });
         setIsEditing(false);
+        setConfirmedData(null);
+        setShowConfirmedData(false);
         
         // Reload week data to show updated table
         await loadWeekData();
@@ -478,13 +551,55 @@ const ActivityTracker = ({ onLogout, user }) => {
         dayData.activities.forEach(activity => {
           const key = `${activity.client}|${activity.activity}`;
           if (!activityMap.has(key)) {
+            // Determine time type from absence data
+            const timeType = dayData.absence?.type === 'Absent' ? 'Absent' : 'Présent';
             activityMap.set(key, {
               client: activity.client,
               activity: activity.activity,
+              timeType: timeType,
               days: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' }
             });
           }
-          activityMap.get(key).days[dayKey] = activity.value ? activity.value.toString() : '';
+          if (activity.value) {
+            activityMap.get(key).days[dayKey] = activity.value.toString();
+          }
+        });
+      }
+    });
+    
+    return Array.from(activityMap.values());
+  };
+
+  // Process confirmed data for display
+  const getConfirmedDataForDisplay = () => {
+    if (!confirmedData) return [];
+    
+    const savedRows = [];
+    const dayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    
+    // Group activities by client and activity combination
+    const activityMap = new Map();
+    
+    dayKeys.forEach((dayKey, dayIndex) => {
+      const dateString = weekDays[dayIndex].dateString;
+      const dayData = confirmedData[dateString];
+      
+      if (dayData && dayData.activities && dayData.activities.length > 0) {
+        dayData.activities.forEach(activity => {
+          const key = `${activity.client}|${activity.activity}`;
+          if (!activityMap.has(key)) {
+            // Determine time type from absence data
+            const timeType = dayData.absence?.type === 'Absent' ? 'Absent' : 'Présent';
+            activityMap.set(key, {
+              client: activity.client,
+              activity: activity.activity,
+              timeType: timeType,
+              days: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' }
+            });
+          }
+          if (activity.value) {
+            activityMap.get(key).days[dayKey] = activity.value.toString();
+          }
         });
       }
     });
@@ -521,23 +636,6 @@ const ActivityTracker = ({ onLogout, user }) => {
       </div>
 
       <div className="content">
-        {isEditing && (
-          <div className="editing-indicator">
-            <span className="editing-icon">✏️</span>
-            <span>Mode édition - Les nouvelles données remplaceront les données existantes</span>
-            <button onClick={() => {
-              setWeekRows([{
-                client: '',
-                activity: '',
-                timeType: 'present',
-                days: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' }
-              }]);
-              setIsEditing(false);
-            }} className="cancel-edit-btn">
-              Annuler
-            </button>
-          </div>
-        )}
         <div className="weekly-table-container">
           <table className="weekly-table">
             <thead>
@@ -545,9 +643,9 @@ const ActivityTracker = ({ onLogout, user }) => {
                 <th className="add-row-header">
                   <button onClick={addRow} className="add-row-btn">+</button>
                 </th>
+                <th>Type de temps</th>
                 <th>Client</th>
                 <th>Activité</th>
-                <th>Type de temps</th>
                 {weekDays.map(day => (
                   <th key={day.dateString} className="day-header">
                     <div className="day-header-name">{day.name}</div>
@@ -565,6 +663,16 @@ const ActivityTracker = ({ onLogout, user }) => {
                         ×
                       </button>
                     )}
+                  </td>
+                  <td>
+                    <select
+                      value={row.timeType}
+                      onChange={(e) => updateRow(rowIndex, 'timeType', e.target.value)}
+                      className="form-control"
+                    >
+                      <option value="present">Présent</option>
+                      <option value="absent">Absent</option>
+                    </select>
                   </td>
                   <td>
                     <select
@@ -591,28 +699,18 @@ const ActivityTracker = ({ onLogout, user }) => {
                       ))}
                     </select>
                   </td>
-                  <td>
-                    <select
-                      value={row.timeType}
-                      onChange={(e) => updateRow(rowIndex, 'timeType', e.target.value)}
-                      className="form-control"
-                    >
-                      <option value="present">Présent</option>
-                      <option value="absent">Absent</option>
-                    </select>
-                  </td>
                   {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => (
                     <td key={dayKey} className="day-input-cell">
                       <input
                         type="number"
-                        min="0.1"
+                        min={row.timeType === 'absent' ? "0" : "0.1"}
                         max="1"
-                        step="0.1"
+                        step={row.timeType === 'absent' ? "1" : "0.1"}
                         value={row.days[dayKey]}
                         onChange={(e) => updateDayValue(rowIndex, dayKey, e.target.value)}
                         className="day-input"
                         placeholder="0.0"
-                        disabled={row.timeType === 'absent'}
+                        disabled={dayKey === 'saturday' || dayKey === 'sunday'}
                       />
                       {row.days[dayKey] && (
                         <div className="day-value-display">{parseFloat(row.days[dayKey]).toFixed(1)}</div>
@@ -647,34 +745,17 @@ const ActivityTracker = ({ onLogout, user }) => {
                   );
                 })}
               </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Third Table - Télétravail and Ticket Restaurant */}
-        <div className="weekly-table-container">
-          <h4 className="table-section-title">Télétravail et Ticket Restaurant</h4>
-          <table className="weekly-table">
-            <thead>
+              
+              {/* Second Table Rows - Télétravail and Ticket Restaurant */}
               <tr>
-                <th></th>
-                {weekDays.map(day => (
-                  <th key={day.dateString} className="day-header">
-                    <div className="day-header-name">{day.name}</div>
-                    <div className="day-header-date">{formatDate(day.date)}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="label-cell">Télétravail</td>
+                <td colSpan="4" className="label-cell">Télétravail</td>
                 {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => (
                   <td key={dayKey} className="day-input-cell">
                     <select
                       value={teleworkData[dayKey]}
                       onChange={(e) => setTeleworkData({ ...teleworkData, [dayKey]: e.target.value })}
                       className="form-control"
+                      disabled={dayKey === 'saturday' || dayKey === 'sunday'}
                     >
                       <option value="0">0</option>
                       <option value="1">1</option>
@@ -683,13 +764,14 @@ const ActivityTracker = ({ onLogout, user }) => {
                 ))}
               </tr>
               <tr>
-                <td className="label-cell">Ticket Restaurant</td>
+                <td colSpan="4" className="label-cell">Ticket Restaurant</td>
                 {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => (
                   <td key={dayKey} className="day-input-cell">
                     <select
                       value={restaurantTicketData[dayKey]}
                       onChange={(e) => setRestaurantTicketData({ ...restaurantTicketData, [dayKey]: e.target.value })}
                       className="form-control"
+                      disabled={dayKey === 'saturday' || dayKey === 'sunday'}
                     >
                       <option value="0">0</option>
                       <option value="1">1</option>
@@ -701,9 +783,114 @@ const ActivityTracker = ({ onLogout, user }) => {
           </table>
         </div>
 
-        <button onClick={handleSubmit} className="submit-btn">
-          Soumettre
-        </button>
+        <div className="button-group">
+          <button onClick={handleConfirm} className="confirm-btn">
+            Confirmer
+          </button>
+          {showConfirmedData && (
+            <button onClick={handleSubmit} className="submit-btn">
+              Soumettre
+            </button>
+          )}
+        </div>
+
+        {/* Confirmed Data Display Table */}
+        {showConfirmedData && getConfirmedDataForDisplay().length > 0 && (
+          <div className="weekly-table-container saved-data-container confirmed-data-container">
+            <div className="saved-data-header">
+              <h4 className="table-section-title">Données confirmées</h4>
+            </div>
+            <table className="weekly-table saved-data-table">
+              <thead>
+                <tr>
+                  <th>Type de temps</th>
+                  <th>Client</th>
+                  <th>Activité</th>
+                  {weekDays.map(day => (
+                    <th key={day.dateString} className="day-header">
+                      <div className="day-header-name">{day.name}</div>
+                      <div className="day-header-date">{formatDate(day.date)}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {getConfirmedDataForDisplay().map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    <td>{row.timeType || 'Présent'}</td>
+                    <td>{row.client}</td>
+                    <td>{row.activity}</td>
+                    {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey) => (
+                      <td key={dayKey} className="day-input-cell">
+                        {row.days[dayKey] ? (
+                          <div className="saved-value">{parseFloat(row.days[dayKey]).toFixed(1)}</div>
+                        ) : (
+                          <div className="saved-value-empty">-</div>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                <tr className="total-row">
+                  <td colSpan="3" className="total-label">Total par jour:</td>
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey) => {
+                    const confirmedRowsData = getConfirmedDataForDisplay();
+                    const total = confirmedRowsData.reduce((sum, row) => {
+                      return sum + (parseFloat(row.days[dayKey]) || 0);
+                    }, 0);
+                    return (
+                      <td key={dayKey} className="total-cell">
+                        {total > 0 ? (
+                          <div className={`total-value ${Math.abs(total - 1) < 0.01 ? 'valid' : 'invalid'}`}>
+                            {total.toFixed(2)}
+                          </div>
+                        ) : (
+                          <div className="total-value">-</div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+                
+                {/* Telework and Restaurant Ticket Data for Confirmed */}
+                <tr>
+                  <td colSpan="3" className="label-cell">Télétravail</td>
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => {
+                    const dateString = weekDays[dayIndex].dateString;
+                    const dayData = confirmedData[dateString];
+                    const teleworkValue = dayData?.absence?.telework || '0';
+                    return (
+                      <td key={dayKey} className="day-input-cell">
+                        <div className="saved-value">{teleworkValue}</div>
+                      </td>
+                    );
+                  })}
+                </tr>
+                <tr>
+                  <td colSpan="3" className="label-cell">Ticket Restaurant</td>
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => {
+                    const dateString = weekDays[dayIndex].dateString;
+                    const dayData = confirmedData[dateString];
+                    const restaurantValue = dayData?.absence?.restaurantTicket || '0';
+                    return (
+                      <td key={dayKey} className="day-input-cell">
+                        <div className="saved-value">{restaurantValue}</div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Editing Indicator - Moved below tables */}
+        {isEditing && (
+          <div className="editing-indicator">
+            <span className="editing-icon">✏️</span>
+            <span>Les nouvelles données remplaceront les données existantes</span>
+          </div>
+        )}
 
         {/* Saved Data Display Table */}
         {getSavedDataForDisplay().length > 0 && (
@@ -720,6 +907,7 @@ const ActivityTracker = ({ onLogout, user }) => {
             <table className="weekly-table saved-data-table">
               <thead>
                 <tr>
+                  <th>Type de temps</th>
                   <th>Client</th>
                   <th>Activité</th>
                   {weekDays.map(day => (
@@ -733,6 +921,7 @@ const ActivityTracker = ({ onLogout, user }) => {
               <tbody>
                 {getSavedDataForDisplay().map((row, rowIndex) => (
                   <tr key={rowIndex}>
+                    <td>{row.timeType || 'Présent'}</td>
                     <td>{row.client}</td>
                     <td>{row.activity}</td>
                     {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey) => (
@@ -747,7 +936,7 @@ const ActivityTracker = ({ onLogout, user }) => {
                   </tr>
                 ))}
                 <tr className="total-row">
-                  <td colSpan="2" className="total-label">Total par jour:</td>
+                  <td colSpan="3" className="total-label">Total par jour:</td>
                   {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey) => {
                     const savedRowsData = getSavedDataForDisplay();
                     const total = savedRowsData.reduce((sum, row) => {
@@ -762,6 +951,34 @@ const ActivityTracker = ({ onLogout, user }) => {
                         ) : (
                           <div className="total-value">-</div>
                         )}
+                      </td>
+                    );
+                  })}
+                </tr>
+                
+                {/* Telework and Restaurant Ticket Data */}
+                <tr>
+                  <td colSpan="3" className="label-cell">Télétravail</td>
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => {
+                    const dateString = weekDays[dayIndex].dateString;
+                    const dayData = weekData[dateString];
+                    const teleworkValue = dayData?.absence?.telework || '0';
+                    return (
+                      <td key={dayKey} className="day-input-cell">
+                        <div className="saved-value">{teleworkValue}</div>
+                      </td>
+                    );
+                  })}
+                </tr>
+                <tr>
+                  <td colSpan="3" className="label-cell">Ticket Restaurant</td>
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey, dayIndex) => {
+                    const dateString = weekDays[dayIndex].dateString;
+                    const dayData = weekData[dateString];
+                    const restaurantValue = dayData?.absence?.restaurantTicket || '0';
+                    return (
+                      <td key={dayKey} className="day-input-cell">
+                        <div className="saved-value">{restaurantValue}</div>
                       </td>
                     );
                   })}
