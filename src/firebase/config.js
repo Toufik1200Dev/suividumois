@@ -4,20 +4,20 @@ import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// Your web app's Firebase configuration
+// Your web app's Firebase configuration (loaded from environment variables)
 const firebaseConfig = {
-  apiKey: "AIzaSyCvTteMbM28eS42crqv2XAREWDNW5JNY3w",
-  authDomain: "lillybelle-activity-suivi.firebaseapp.com",
-  projectId: "lillybelle-activity-suivi",
-  storageBucket: "lillybelle-activity-suivi.firebasestorage.app",
-  messagingSenderId: "900260952535",
-  appId: "1:900260952535:web:9d506ed2e1d52cb835f392",
-  measurementId: "G-XBPQT0HYXL"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+getAnalytics(app);
 
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);

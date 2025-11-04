@@ -188,17 +188,45 @@ const LoginPage = ({ onLogin }) => {
                     required
                   >
                     <option value="">Sélectionner un poste</option>
-                    <option value="Développeur Senior">Développeur Senior</option>
-                    <option value="Développeur Junior">Développeur Junior</option>
-                    <option value="Chef de Projet">Chef de Projet</option>
-                    <option value="Commercial">Commercial</option>
-                    <option value="Responsable RH">Responsable RH</option>
-                    <option value="Comptable">Comptable</option>
-                    <option value="Chef d'équipe">Chef d'équipe</option>
-                    <option value="Analyste">Analyste</option>
-                    <option value="Consultant">Consultant</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Autre">Autre</option>
+                    <option value="Responsable de bureau">Responsable de bureau</option>
+                    <option value="Assistante Supply Chain et ADV">Assistante Supply Chain et ADV</option>
+                    <option value="Assistant ADV et Finances">Assistant ADV et Finances</option>
+                    <option value="Comptable, Assistante ADV et Supply Chain">Comptable, Assistante ADV et Supply Chain</option>
+                    <option value="Chargé de marketing et communication">Chargé de marketing et communication</option>
+                    <option value="Agent entretien">Agent entretien</option>
+                    <option value="Chauffeur - coursier">Chauffeur - coursier</option>
+                    <option value="Directeur Général">Directeur Général</option>
+                    <option value="Directeur Général Adjoint">Directeur Général Adjoint</option>
+                    <option value="Directrice Organisation et RH">Directrice Organisation et RH</option>
+                    <option value="Direction Comptabilité et Finances">Direction Comptabilité et Finances</option>
+                    <option value="Directeur Commercial Export">Directeur Commercial Export</option>
+                    <option value="Directeur Commercial / Head of Sales">Directeur Commercial / Head of Sales</option>
+                    <option value="Ingénieur Commercial">Ingénieur Commercial</option>
+                    <option value="Chef des ventes France">Chef des ventes France</option>
+                    <option value="Business Developer">Business Developer</option>
+                    <option value="Technico-Commercial">Technico-Commercial</option>
+                    <option value="Coordinatrice des Ventes">Coordinatrice des Ventes</option>
+                    <option value="Directeur des Opérations">Directeur des Opérations</option>
+                    <option value="Dessinateur et Superviseur de travaux">Dessinateur et Superviseur de travaux</option>
+                    <option value="Project Manager">Project Manager</option>
+                    <option value="Stagiaire">Stagiaire</option>
+                    <option value="Technicien Coordinatrice FTTX">Technicien Coordinatrice FTTX</option>
+                    <option value="Superviseur Génie civil et magasin">Superviseur Génie civil et magasin</option>
+                    <option value="Technicien Telecom">Technicien Telecom</option>
+                    <option value="Alternant ingénieur Telecom">Alternant ingénieur Telecom</option>
+                    <option value="Technicien Support">Technicien Support</option>
+                    <option value="Ingénieur Telecom">Ingénieur Telecom</option>
+                    <option value="Technicien de mesures confirmé">Technicien de mesures confirmé</option>
+                    <option value="Ingénieur Radio Senior">Ingénieur Radio Senior</option>
+                    <option value="Expert Outils et Développement">Expert Outils et Développement</option>
+                    <option value="Technicien Telecom Post Traitement">Technicien Telecom Post Traitement</option>
+                    <option value="Technicien Drive Test et Support Senior">Technicien Drive Test et Support Senior</option>
+                    <option value="Chef projet drive test et Support technique">Chef projet drive test et Support technique</option>
+                    <option value="Chef de projets">Chef de projets</option>
+                    <option value="Chef de projet senior">Chef de projet senior</option>
+                    <option value="Responsable Supply Chain">Responsable Supply Chain</option>
+                    <option value="Gestionnaire Supply Chain">Gestionnaire Supply Chain</option>
+                    <option value="Responsable Support Telecom, IT et développement">Responsable Support Telecom, IT et développement</option>
                   </select>
                 </div>
               </>

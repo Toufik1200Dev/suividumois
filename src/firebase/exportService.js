@@ -28,12 +28,14 @@ export const exportAllEmployeesDataToCSV = async () => {
             if (dayData && dayData.activities && dayData.activities.length > 0) {
               // Create a row for each activity
               dayData.activities.forEach(activity => {
+                // Use the value from activity (0.1-1) instead of always 1
+                const somme = activity.value ? activity.value.toString() : '1';
                 const row = {
                   'Nom du collaborateur': `${userData.firstName} ${userData.lastName}`,
                   'Date': formatDate(dateString),
                   'Client': activity.client || '',
                   'Activité': activity.activity || '',
-                  'Somme': '1',
+                  'Somme': somme,
                   'TTV': '0',
                   'TR': dayData.absence?.restaurantTicket === '1' ? '1' : '0',
                   'Absence': dayData.absence?.type === 'Présent' ? '' : (dayData.absence?.type || '')
